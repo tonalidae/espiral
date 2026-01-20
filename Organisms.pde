@@ -77,7 +77,7 @@ void detectOrganisms() {
     // AUTOPOIETIC LIFECYCLE CHECKS
     
     // Check for reproduction readiness
-    if (org.reproductionBuffer >= REPRODUCTION_THRESHOLD && 
+    if (org.reproductionBuffer >= org.genome.reproductionThreshold && 
         org.cells.size() > 30 && 
         (frameCount - org.birthFrame) > 600 &&
         random(1) < 0.005) {  // 0.5% chance per frame when conditions met

@@ -174,8 +174,12 @@ class Organism {
           int ny = (y + int(toCenter.y) + rows) % rows;
           
           float transfer = contraction * 1.5;
-          deltaEnergy[nx][ny] += transfer;
-          cellEnergy[x][y] = max(0, cellEnergy[x][y] - transfer);
+          float available = cellEnergy[x][y];
+          float moved = min(available, transfer);
+          if (moved > 0) {
+            cellEnergy[nx][ny] = min(MAX_ENERGY, cellEnergy[nx][ny] + moved);
+            cellEnergy[x][y] = available - moved;
+          }
         }
       } else {
         // EXPANSION: Push energy outward (creates jet propulsion)
@@ -184,8 +188,12 @@ class Organism {
         int ny = (y + int(toCenter.y) + rows) % rows;
         
         float transfer = abs(contraction) * 1.2;
-        deltaEnergy[nx][ny] += transfer;
-        cellEnergy[x][y] = max(0, cellEnergy[x][y] - transfer);
+        float available = cellEnergy[x][y];
+        float moved = min(available, transfer);
+        if (moved > 0) {
+          cellEnergy[nx][ny] = min(MAX_ENERGY, cellEnergy[nx][ny] + moved);
+          cellEnergy[x][y] = available - moved;
+        }
       }
     }
   }
@@ -224,8 +232,12 @@ class Organism {
         int ny = (y + int(movementDirection.y * 2) + rows) % rows;
         
         float transfer = 2.5 * metabolicActivity * alignment;
-        deltaEnergy[nx][ny] += transfer;
-        cellEnergy[x][y] = max(0, cellEnergy[x][y] - transfer);
+        float available = cellEnergy[x][y];
+        float moved = min(available, transfer);
+        if (moved > 0) {
+          cellEnergy[nx][ny] = min(MAX_ENERGY, cellEnergy[nx][ny] + moved);
+          cellEnergy[x][y] = available - moved;
+        }
       }
     }
   }

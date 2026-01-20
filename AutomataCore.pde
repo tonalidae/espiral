@@ -60,9 +60,12 @@ void updateAutomata() {
         float packetEnergy = min(PACKET_SIZE, newEnergy);
         float lossMultiplier = 1.0 - PACKET_LOSS;
         float packetAfterLoss = max(0, packetEnergy * lossMultiplier);
-        
+
+        // Destination receives reduced energy; source pays full packetEnergy.
+        // The difference is true loss from the system.
         deltaEnergy[nx][ny] += packetAfterLoss;
-        newEnergy -= packetAfterLoss;
+        newEnergy -= packetEnergy;
+        if (newEnergy < 0) newEnergy = 0;
         
         // Visual particle trail (10% spawn rate for performance)
         if (random(1) < 0.1) {
