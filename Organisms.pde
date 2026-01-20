@@ -74,6 +74,25 @@ void detectOrganisms() {
       org.displayAlpha = max(0, org.displayAlpha);
     }
     
+    // AUTOPOIETIC LIFECYCLE CHECKS
+    
+    // Check for reproduction readiness
+    if (org.reproductionBuffer >= REPRODUCTION_THRESHOLD && 
+        org.cells.size() > 30 && 
+        (frameCount - org.birthFrame) > 600 &&
+        random(1) < 0.005) {  // 0.5% chance per frame when conditions met
+      org.isReproducing = true;
+      org.reproduce();
+    }
+    
+    // Check for death conditions
+    if (org.shouldDie()) {
+      org.dissolve();  // Return energy to environment
+      organisms.remove(i);
+      continue;
+    }
+    
+    // Remove faded or timed-out organisms
     if (org.displayAlpha <= 0 || (frameCount - org.lastSeenFrame) > 240) {
       organisms.remove(i);
     }

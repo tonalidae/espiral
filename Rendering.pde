@@ -4,9 +4,15 @@
 // ============================================================
 
 void drawAutomata() {
+  // Viewport culling: Calculate visible cell range based on camera and zoom
+  int startX = max(0, int((-cameraX - width/(2*zoomLevel)) / cellSize));
+  int endX = min(cols, int((-cameraX + width/(2*zoomLevel)) / cellSize) + 1);
+  int startY = max(0, int((-cameraY - height/(2*zoomLevel)) / cellSize));
+  int endY = min(rows, int((-cameraY + height/(2*zoomLevel)) / cellSize) + 1);
+  
   loadPixels();
-  for (int x = 0; x < cols; x++) {
-    for (int y = 0; y < rows; y++) {
+  for (int x = startX; x < endX; x++) {
+    for (int y = startY; y < endY; y++) {
       int tokenCount = tokensA[x][y] + tokensB[x][y];
       int bTokens = tokensB[x][y];
       float energy = cellEnergy[x][y];
@@ -21,6 +27,13 @@ void drawAutomata() {
       // BIOME COLOR-CODING
       float scarLevel = cellScar[x][y];
       float adhesion = bTokens >= ADHESION_THRESHOLD ? (min(bTokens, 8) / 8.0) : 0;
+      
+      // AUTOPOIETIC MEMORY: Scars shimmer with remembered touch
+      if (scarLevel > 0.1) {
+        float memoryGlow = scarLevel * 30;  // 0-30% brightness boost
+        colorBri = min(100, colorBri + memoryGlow);
+        colorSat = colorSat * (1.0 - scarLevel * 0.5);  // Desaturate toward white/silver
+      }
       
       if (scarLevel > 0.3) {
         colorHue = lerp(colorHue, 0, scarLevel);
@@ -60,12 +73,31 @@ void drawAutomata() {
   }
   updatePixels();
   
-  // === GLOW HALOS ===
+  // === GLOW HALOS === (with viewport culling)
   noStroke();
-  for (int x = 0; x < cols; x++) {
-    for (int y = 0; y < rows; y++) {
+  for (int x = startX; x < endX; x++) {
+    for (int y = startY; y < endY; y++) {
       int tokenCount = tokensA[x][y] + tokensB[x][y];
       float energy = cellEnergy[x][y];
+      
+      // Enhanced bloom for very high energy cells (visual "heat")
+      if (energy > 70 && tokenCount >= COLOR_THRESHOLD) {
+        float cx = x * cellSize + cellSize * 0.5;
+        float cy = y * cellSize + cellSize * 0.5;
+        float life = constrain(energy / MAX_ENERGY, 0, 1);
+        float bloomIntensity = map(energy, 70, MAX_ENERGY, 0, 1);
+        
+        float haloHue = hueGrid[x][y];
+        float haloSat = satGrid[x][y];
+        
+        // Outer bloom ring
+        fill(haloHue, haloSat * 0.3, 100, 8 * life * bloomIntensity);
+        ellipse(cx, cy, cellSize * 5, cellSize * 5);
+        
+        // Middle bloom
+        fill(haloHue, haloSat * 0.5, 100, 15 * life * bloomIntensity);
+        ellipse(cx, cy, cellSize * 3, cellSize * 3);
+      }
       
       if (energy < 20 || tokenCount < 2) continue;
       
@@ -83,15 +115,16 @@ void drawAutomata() {
         haloSat *= 0.7;
       }
       
+      // Reduced glow sizes to make organisms more visible
       fill(haloHue, haloSat * 0.6, haloBri * 0.8, 15 * life);
-      ellipse(cx, cy, cellSize * 6, cellSize * 6);
+      ellipse(cx, cy, cellSize * 3, cellSize * 3);
       
       fill(haloHue, haloSat * 0.8, haloBri * 1.2, 25 * life);
-      ellipse(cx, cy, cellSize * 3, cellSize * 3);
+      ellipse(cx, cy, cellSize * 1.5, cellSize * 1.5);
       
       if (tokenCount >= COLOR_THRESHOLD) {
         fill(haloHue, haloSat * 0.4, 100, 40 * life);
-        ellipse(cx, cy, cellSize * 1.5, cellSize * 1.5);
+        ellipse(cx, cy, cellSize * 0.8, cellSize * 0.8);
       }
     }
   }

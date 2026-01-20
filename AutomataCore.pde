@@ -41,7 +41,6 @@ void updateAutomata() {
       // === DEGENERATION ===
       float energyLoss = BASELINE_DECAY;
       if (neighborTokens == 0) energyLoss += ISOLATION_DECAY;
-      energyLoss *= radiationStrength;
       float newEnergy = max(0, currentEnergy - energyLoss);
       
       energyDrainTracker[x][y] = energyLoss;
@@ -59,11 +58,16 @@ void updateAutomata() {
         int ny = unpackY(packed);
         
         float packetEnergy = min(PACKET_SIZE, newEnergy);
-        float lossMultiplier = 1.0 - (PACKET_LOSS * radiationStrength);
+        float lossMultiplier = 1.0 - PACKET_LOSS;
         float packetAfterLoss = max(0, packetEnergy * lossMultiplier);
         
         deltaEnergy[nx][ny] += packetAfterLoss;
         newEnergy -= packetAfterLoss;
+        
+        // Visual particle trail (10% spawn rate for performance)
+        if (random(1) < 0.1) {
+          energyParticles.add(new EnergyParticle(x, y, nx, ny, hueGrid[x][y]));
+        }
       }
 
       // === RESIDUAL DIFFUSION ===
@@ -128,11 +132,20 @@ void updateAutomata() {
         }
       }
 
-      // === TOKEN CREATION ===
+      // === TOKEN CREATION (AUTOPOIETIC DIFFERENTIATION) ===
+      // Organisms self-organize toward optimal A/B ratio
+      // A = membrane (boundary, mobile) / B = core (metabolic, stable)
       int totalAfterLocal = newA + newB;
       if (newEnergy >= ENERGY_TO_TOKEN_THRESHOLD && totalAfterLocal < MAX_TOKENS) {
-        if (random(1) < 0.90) newA++;
-        else newB++;
+        float currentRatio = totalAfterLocal > 0 ? float(newA) / totalAfterLocal : 0.5;
+        
+        // Self-regulate toward healthy structure (operational closure)
+        if (currentRatio < OPTIMAL_AB_RATIO) {
+          newA++;  // Need more membrane (protective boundary)
+        } else {
+          newB++;  // Need more metabolic core (stability)
+        }
+        
         newEnergy -= ENERGY_TO_TOKEN_THRESHOLD;
       }
 
@@ -185,24 +198,55 @@ void updateAutomata() {
   float[][] tmpE = cellEnergy; cellEnergy = nextEnergy; nextEnergy = tmpE;
 }
 
-// === SPIRAL ENERGY INJECTION ===
+// === SPIRAL ENERGY INJECTION (AUTOPOIETIC TOUCH) ===
+// Touch creates bidirectional relationship: viewer affects organism, organism responds
 void injectPointsToAutomata() {
   for (Punto p : puntosGlobales) {
     int gx = int(p.x / cellSize);
     int gy = int(p.y / cellSize);
     if (gx >= 0 && gx < cols && gy >= 0 && gy < rows) {
-      float injectionAmount = 8.0;
-      cellEnergy[gx][gy] = min(MAX_ENERGY, cellEnergy[gx][gy] + injectionAmount);
+      float currentEnergy = cellEnergy[gx][gy];
+      float baseInjection = 8.0;
       
+      // AUTOPOIETIC RULE 1: Structural Coupling
+      // High-energy cells RESIST overstimulation (maintain boundary)
+      float receptivity = 1.0 - (currentEnergy / MAX_ENERGY) * TOUCH_RECEPTIVITY_DECAY;
+      receptivity = max(0.1, receptivity);  // Never completely closed
+      
+      // Low-energy cells are HUNGRY (responsive to environment)
+      if (currentEnergy < 20) {
+        receptivity *= HUNGER_AMPLIFICATION;
+      }
+      
+      float injectionAmount = baseInjection * receptivity;
+      
+      // AUTOPOIETIC RULE 2: Memory Formation
+      // Touch creates lasting trace (scar = experience, not just damage)
+      float touchIntensity = injectionAmount / baseInjection;
+      cellScar[gx][gy] = min(1.0, cellScar[gx][gy] + touchIntensity * OVERSTIMULATION_SCAR_RATE);
+      
+      // Apply energy
+      cellEnergy[gx][gy] = min(MAX_ENERGY, currentEnergy + injectionAmount);
+      
+      // Visual feedback
       hueGrid[gx][gy] = lerp(hueGrid[gx][gy], p.hue, 0.3);
       satGrid[gx][gy] = lerp(satGrid[gx][gy], p.sat * 0.6, 0.3);
       briGrid[gx][gy] = lerp(briGrid[gx][gy], p.bri * 0.8, 0.3);
       
+      // AUTOPOIETIC RULE 3: Need-Based Distribution
+      // Energy flows toward deficiency, not evenly
       for (int dx = -1; dx <= 1; dx++) {
         for (int dy = -1; dy <= 1; dy++) {
+          if (dx == 0 && dy == 0) continue;
           int nx = (gx + dx + cols) % cols;
           int ny = (gy + dy + rows) % rows;
-          cellEnergy[nx][ny] = min(MAX_ENERGY, cellEnergy[nx][ny] + injectionAmount * 0.3);
+          
+          // Calculate neighbor's need (inversely proportional to current energy)
+          float neighborEnergy = cellEnergy[nx][ny];
+          float neighborNeed = (MAX_ENERGY - neighborEnergy) / MAX_ENERGY;
+          float transferAmount = injectionAmount * 0.2 * neighborNeed;
+          
+          cellEnergy[nx][ny] = min(MAX_ENERGY, neighborEnergy + transferAmount);
         }
       }
     }
