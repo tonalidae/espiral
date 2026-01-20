@@ -1,0 +1,236 @@
+// ============================================================
+// AUTOMATACORE.PDE
+// Core cellular automata logic: token movement, energy packets,
+// Petri net transitions, and state updates
+// ============================================================
+
+// === MAIN UPDATE FUNCTION ===
+void updateAutomata() {
+  // Reset deltas (atomic accumulators)
+  for (int x = 0; x < cols; x++) {
+    for (int y = 0; y < rows; y++) {
+      deltaTokensA[x][y] = 0;
+      deltaTokensB[x][y] = 0;
+      deltaEnergy[x][y] = 0;
+    }
+  }
+
+  for (int x = 0; x < cols; x++) {
+    for (int y = 0; y < rows; y++) {
+      int a = tokensA[x][y];
+      int b = tokensB[x][y];
+      int currentTokens = a + b;
+      float currentEnergy = cellEnergy[x][y];
+
+      // Copy current state to next state as baseline
+      nextTokensA[x][y] = a;
+      nextTokensB[x][y] = b;
+      nextEnergy[x][y] = currentEnergy;
+
+      // Skip dead cells
+      if (currentTokens == 0 && currentEnergy < 0.1) {
+        nextTokensA[x][y] = 0;
+        nextTokensB[x][y] = 0;
+        nextEnergy[x][y] = 0;
+        continue;
+      }
+
+      int neighborTokens = countNeighborTokens(x, y);
+      float neighborAvgEnergy = getNeighborAvgEnergy(x, y);
+
+      // === DEGENERATION ===
+      float energyLoss = BASELINE_DECAY;
+      if (neighborTokens == 0) energyLoss += ISOLATION_DECAY;
+      energyLoss *= radiationStrength;
+      float newEnergy = max(0, currentEnergy - energyLoss);
+      
+      energyDrainTracker[x][y] = energyLoss;
+
+      // === ENERGY PACKETS ===
+      float pEmit = PACKET_EMIT_RATE * constrain(newEnergy / MAX_ENERGY, 0, 1);
+      pEmit *= (1.0 - 0.10 * min(b, 5));
+      
+      int emitCount = 0;
+      while (emitCount < PACKETS_MAX_PER_CELL && random(1) < pEmit) emitCount++;
+      
+      for (int p = 0; p < emitCount; p++) {
+        int packed = getRandomNeighborPacked(x, y);
+        int nx = unpackX(packed);
+        int ny = unpackY(packed);
+        
+        float packetEnergy = min(PACKET_SIZE, newEnergy);
+        float lossMultiplier = 1.0 - (PACKET_LOSS * radiationStrength);
+        float packetAfterLoss = max(0, packetEnergy * lossMultiplier);
+        
+        deltaEnergy[nx][ny] += packetAfterLoss;
+        newEnergy -= packetAfterLoss;
+      }
+
+      // === RESIDUAL DIFFUSION ===
+      float diffusion = ENERGY_DIFFUSION * (1.0 - 0.15 * min(b, 5));
+      diffusion = constrain(diffusion, 0.0, ENERGY_DIFFUSION);
+      diffusion *= DIFFUSION_BLEND;
+      
+      float scarLevel = cellScar[x][y];
+      diffusion *= (1.0 - scarLevel * SCAR_DIFFUSION_PENALTY);
+      
+      newEnergy = lerp(newEnergy, neighborAvgEnergy, diffusion);
+      
+      float effectiveMaxEnergy = MAX_ENERGY * (1.0 - scarLevel * SCAR_CAPACITY_PENALTY);
+      newEnergy = min(newEnergy, effectiveMaxEnergy);
+
+      int newA = a;
+      int newB = b;
+
+      // === TOKEN MOVEMENT (A movers) ===
+      if (newA > 0 && newEnergy > 10) {
+        float pMove = 0.05 + 0.20 * constrain((newEnergy - 10) / 40.0, 0, 1);
+        pMove *= (1.0 + 0.10 * min(newA - 1, 5));
+        
+        // ADHESION
+        if (b >= ADHESION_THRESHOLD) {
+          float adhesion = 1.0 - (ADHESION_STRENGTH * (min(b, 8) / 8.0));
+          pMove *= adhesion;
+        }
+        
+        if (random(1) < pMove) {
+          int packed = getBestEnergyNeighborPackedPhase(x, y);
+          if (packed == -1) packed = getBestEnergyNeighborPacked(x, y);
+          
+          if (packed != -1) {
+            int nx = unpackX(packed);
+            int ny = unpackY(packed);
+            int destTotal = tokensA[nx][ny] + tokensB[nx][ny] + deltaTokensA[nx][ny] + deltaTokensB[nx][ny];
+            if (destTotal < MAX_TOKENS) {
+              newA -= 1;
+              deltaTokensA[nx][ny] += 1;
+
+              float energyToTransfer = newEnergy * ENERGY_TRANSFER;
+              energyToTransfer = max(0, energyToTransfer);
+              deltaEnergy[nx][ny] += energyToTransfer;
+              newEnergy -= energyToTransfer;
+              
+              energyDrainTracker[x][y] += energyToTransfer;
+            }
+          }
+        }
+      }
+
+      // === TOKEN MOVEMENT (B blockers) ===
+      if (newB > 0 && newEnergy > 30 && random(1) < 0.03) {
+        int packed = getRandomNeighborPacked(x, y);
+        int nx = unpackX(packed);
+        int ny = unpackY(packed);
+        int destTotal = tokensA[nx][ny] + tokensB[nx][ny] + deltaTokensA[nx][ny] + deltaTokensB[nx][ny];
+        if (destTotal < MAX_TOKENS) {
+          newB -= 1;
+          deltaTokensB[nx][ny] += 1;
+        }
+      }
+
+      // === TOKEN CREATION ===
+      int totalAfterLocal = newA + newB;
+      if (newEnergy >= ENERGY_TO_TOKEN_THRESHOLD && totalAfterLocal < MAX_TOKENS) {
+        if (random(1) < 0.90) newA++;
+        else newB++;
+        newEnergy -= ENERGY_TO_TOKEN_THRESHOLD;
+      }
+
+      // === TOKEN DECAY ===
+      if (newEnergy < 1.0 && (newA + newB) > 0) {
+        if (newA > 0 && random(1) < 0.1) newA--;
+        else if (newB > 0 && random(1) < 0.05) newB--;
+      }
+
+      nextTokensA[x][y] = newA;
+      nextTokensB[x][y] = newB;
+      nextEnergy[x][y] = newEnergy;
+
+      // === COLOR UPDATE ===
+      if (currentTokens < COLOR_THRESHOLD) {
+        hueGrid[x][y] = lerp(hueGrid[x][y], 0, 0.05);
+        satGrid[x][y] = lerp(satGrid[x][y], 0, 0.05);
+        briGrid[x][y] = lerp(briGrid[x][y], 0, 0.05);
+      } else {
+        int blueCol = blueNebula[int(random(blueNebula.length))];
+        hueGrid[x][y] = lerp(hueGrid[x][y], getHueFromHex(blueCol), 0.03);
+        satGrid[x][y] = lerp(satGrid[x][y], getSatFromHex(blueCol) * 0.8, 0.03);
+        briGrid[x][y] = lerp(briGrid[x][y], getBriFromHex(blueCol) * 0.7, 0.03);
+      }
+
+      float noiseFactor = noise(x * 0.05, y * 0.05, millis() * 0.0003);
+      satGrid[x][y] *= map(noiseFactor, 0, 1, 0.9, 1.1);
+      briGrid[x][y] *= map(noiseFactor, 0, 1, 0.85, 1.15);
+    }
+  }
+
+  // Apply deltas
+  for (int x = 0; x < cols; x++) {
+    for (int y = 0; y < rows; y++) {
+      nextTokensA[x][y] = constrain(nextTokensA[x][y] + deltaTokensA[x][y], 0, MAX_TOKENS);
+      nextTokensB[x][y] = constrain(nextTokensB[x][y] + deltaTokensB[x][y], 0, MAX_TOKENS);
+      nextEnergy[x][y] = constrain(nextEnergy[x][y] + deltaEnergy[x][y], 0, MAX_ENERGY);
+    }
+  }
+
+  updateBiomeDamageAndHealing();
+
+  // Swap buffers
+  int[][] tmpA = tokensA; tokensA = nextTokensA; nextTokensA = tmpA;
+  int[][] tmpB = tokensB; tokensB = nextTokensB; nextTokensB = tmpB;
+  float[][] tmpE = cellEnergy; cellEnergy = nextEnergy; nextEnergy = tmpE;
+}
+
+// === SPIRAL ENERGY INJECTION ===
+void injectPointsToAutomata() {
+  for (Punto p : puntosGlobales) {
+    int gx = int(p.x / cellSize);
+    int gy = int(p.y / cellSize);
+    if (gx >= 0 && gx < cols && gy >= 0 && gy < rows) {
+      float injectionAmount = 8.0;
+      cellEnergy[gx][gy] = min(MAX_ENERGY, cellEnergy[gx][gy] + injectionAmount);
+      
+      hueGrid[gx][gy] = lerp(hueGrid[gx][gy], p.hue, 0.3);
+      satGrid[gx][gy] = lerp(satGrid[gx][gy], p.sat * 0.6, 0.3);
+      briGrid[gx][gy] = lerp(briGrid[gx][gy], p.bri * 0.8, 0.3);
+      
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          int nx = (gx + dx + cols) % cols;
+          int ny = (gy + dy + rows) % rows;
+          cellEnergy[nx][ny] = min(MAX_ENERGY, cellEnergy[nx][ny] + injectionAmount * 0.3);
+        }
+      }
+    }
+  }
+  puntosGlobales.clear();
+}
+
+// === NEIGHBOR QUERIES ===
+int countNeighborTokens(int x, int y) {
+  int count = 0;
+  for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -1; dy <= 1; dy++) {
+      if (dx == 0 && dy == 0) continue;
+      int nx = (x + dx + cols) % cols;
+      int ny = (y + dy + rows) % rows;
+      if (tokensA[nx][ny] + tokensB[nx][ny] > 0) count++;
+    }
+  }
+  return count;
+}
+
+float getNeighborAvgEnergy(int x, int y) {
+  float totalEnergy = 0;
+  int count = 0;
+  for (int dx = -1; dx <= 1; dx++) {
+    for (int dy = -1; dy <= 1; dy++) {
+      if (dx == 0 && dy == 0) continue;
+      int nx = (x + dx + cols) % cols;
+      int ny = (y + dy + rows) % rows;
+      totalEnergy += cellEnergy[nx][ny];
+      count++;
+    }
+  }
+  return count > 0 ? totalEnergy / count : 0;
+}
