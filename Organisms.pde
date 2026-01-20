@@ -81,20 +81,31 @@ void detectOrganisms() {
 }
 
 void floodFill(int x, int y, boolean[][] visited, ArrayList<PVector> cluster) {
-  if (visited[x][y]) return;
-  if (cellEnergy[x][y] < ORGANISM_DETECTION_ENERGY) return;
+  // Iterative flood fill using stack to prevent stack overflow
+  ArrayList<int[]> stack = new ArrayList<int[]>();
+  stack.add(new int[]{x, y});
   
-  visited[x][y] = true;
-  cluster.add(new PVector(x, y));
-  
-  if (cluster.size() > 200) return;
-  
-  for (int dx = -1; dx <= 1; dx++) {
-    for (int dy = -1; dy <= 1; dy++) {
-      if (dx == 0 && dy == 0) continue;
-      int nx = (x + dx + cols) % cols;
-      int ny = (y + dy + rows) % rows;
-      floodFill(nx, ny, visited, cluster);
+  while (stack.size() > 0 && cluster.size() < 200) {
+    int[] current = stack.remove(stack.size() - 1);
+    int cx = current[0];
+    int cy = current[1];
+    
+    if (visited[cx][cy]) continue;
+    if (cellEnergy[cx][cy] < ORGANISM_DETECTION_ENERGY) continue;
+    
+    visited[cx][cy] = true;
+    cluster.add(new PVector(cx, cy));
+    
+    // Add neighbors to stack
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dy = -1; dy <= 1; dy++) {
+        if (dx == 0 && dy == 0) continue;
+        int nx = (cx + dx + cols) % cols;
+        int ny = (cy + dy + rows) % rows;
+        if (!visited[nx][ny] && cellEnergy[nx][ny] >= ORGANISM_DETECTION_ENERGY) {
+          stack.add(new int[]{nx, ny});
+        }
+      }
     }
   }
 }

@@ -70,6 +70,10 @@ class Ola {
 
       float px = x + cos(angS) * r;
       float py = y + sin(angS) * r;
+      
+      // Spatial culling: skip off-screen points
+      float margin = cellSize * 20;
+      if (px < -margin || px > width + margin || py < -margin || py > height + margin) continue;
 
       float g = growthConstraint(angP, r, petals);
       if (random(2) > g) continue;

@@ -110,7 +110,7 @@ void updateAutomata() {
               deltaEnergy[nx][ny] += energyToTransfer;
               newEnergy -= energyToTransfer;
               
-              energyDrainTracker[x][y] += energyToTransfer;
+              // Note: energyDrainTracker tracks decay/damage loss only, not token movement energy
             }
           }
         }
@@ -147,15 +147,19 @@ void updateAutomata() {
       nextEnergy[x][y] = newEnergy;
 
       // === COLOR UPDATE ===
-      if (currentTokens < COLOR_THRESHOLD) {
+      int updatedTokens = newA + newB;
+      if (updatedTokens < COLOR_THRESHOLD) {
         hueGrid[x][y] = lerp(hueGrid[x][y], 0, 0.05);
         satGrid[x][y] = lerp(satGrid[x][y], 0, 0.05);
         briGrid[x][y] = lerp(briGrid[x][y], 0, 0.05);
       } else {
-        int blueCol = blueNebula[int(random(blueNebula.length))];
-        hueGrid[x][y] = lerp(hueGrid[x][y], getHueFromHex(blueCol), 0.03);
-        satGrid[x][y] = lerp(satGrid[x][y], getSatFromHex(blueCol) * 0.8, 0.03);
-        briGrid[x][y] = lerp(briGrid[x][y], getBriFromHex(blueCol) * 0.7, 0.03);
+        // Cache color to avoid redundant calculations (only update occasionally)
+        if (random(1) < 0.1 || hueGrid[x][y] < 1.0) {
+          int blueCol = blueNebula[int(random(blueNebula.length))];
+          hueGrid[x][y] = lerp(hueGrid[x][y], getHueFromHex(blueCol), 0.03);
+          satGrid[x][y] = lerp(satGrid[x][y], getSatFromHex(blueCol) * 0.8, 0.03);
+          briGrid[x][y] = lerp(briGrid[x][y], getBriFromHex(blueCol) * 0.7, 0.03);
+        }
       }
 
       float noiseFactor = noise(x * 0.05, y * 0.05, millis() * 0.0003);
@@ -164,7 +168,7 @@ void updateAutomata() {
     }
   }
 
-  // Apply deltas
+  // Apply deltas (nextTokens arrays hold local changes, deltas hold neighbor contributions)
   for (int x = 0; x < cols; x++) {
     for (int y = 0; y < rows; y++) {
       nextTokensA[x][y] = constrain(nextTokensA[x][y] + deltaTokensA[x][y], 0, MAX_TOKENS);

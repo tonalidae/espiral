@@ -138,7 +138,7 @@ class Organism {
     strokeCap(ROUND);
     strokeJoin(ROUND);
 
-    int maxLinks = 240;
+    int maxLinks = 60;  // Reduced from 240 for better performance
     int step = max(1, cells.size() / maxLinks);
 
     for (int i = 0; i < cells.size(); i += step) {
